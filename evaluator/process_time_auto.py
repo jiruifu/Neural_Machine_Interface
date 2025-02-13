@@ -18,6 +18,17 @@ import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+# Initialize global variables
+global matfilePaths
+global matfilePathsName
+global targetDir
+global targetDirName
+
+matfilePaths = None
+matfilePathsName = None
+targetDir = None
+targetDirName = None
+
 def sort_folders_by_creation():
     root = tk.Tk()
     root.withdraw()
@@ -200,10 +211,15 @@ def copy_best_model(source_dir, target_dir, model_name, param_name):
     if not found_param:
         print("Warning: No best parameter (.pkl) file found")
 
-def organize_files(resultDir=None, dataDir=None, targetDir=None):
+def organize_files(resultDir=None, dataDir=None):
     """
     Copy the model and parameter files
     """
+    global matfilePaths
+    global matfilePathsName
+    global targetDir
+    global targetDirName
+    
     output = dict()
 
     if resultDir is None:
@@ -213,15 +229,22 @@ def organize_files(resultDir=None, dataDir=None, targetDir=None):
         resultDirName = os.path.split(resultDir)[-1]
     print(f"Selected result directory: {resultDirName}")
     
+    # Handle data directory
     if dataDir is None:
-        dataDir = ask_dir("Please select the directory of the .mat files")
-        dataDirName = os.path.split(dataDir)[-1]
+        if matfilePaths is None:
+            dataDir = ask_dir("Please select the directory of the .mat files")
+            matfilePaths = dataDir
+            dataDirName = os.path.split(dataDir)[-1]
+            matfilePathsName = dataDirName
+        else:
+            dataDir = matfilePaths
+            dataDirName = matfilePathsName
     else:
         dataDirName = os.path.split(dataDir)[-1]
     print(f"Selected data directory: {dataDirName}")
     
     if targetDir is None:
-        targetDir = ask_dir("Please select the target directory")
+        targetDir=os.path.join(os.path.dirname(__file__), "tmp")
         targetDirName = os.path.split(targetDir)[-1]
         print(f"Selected target directory: {targetDirName}")
     
@@ -306,9 +329,10 @@ def process_time(root_dir, frames=500):
             start_time = time.time()
             _ = model(frame)
             end_time = time.time()
-            tHist.append(end_time - start_time)
+            # Convert to milliseconds
+            tHist.append((end_time - start_time) * 1000)
     shutil.rmtree(result["targetDir"])
-    print("---%s seconds ---"% np.mean(tHist))
+    print("---%s milliseconds ---"% np.mean(tHist))
     return np.mean(tHist), subject, intensity, muscle, window_size, step_size
 
 def main():
@@ -334,26 +358,40 @@ def main():
                 avg_speeds["WS120"].append(avg_speed)
     
     # Create plot
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(5, 4))
 
     # Convert dictionary to lists for plotting
     window_sizes = list(avg_speeds.keys())
-    speeds = list(avg_speeds.values())
+    speeds = [s for s in avg_speeds.values() if len(s) > 0]  # Only include non-empty lists
+    
+    if not speeds:  # If no data collected
+        print("No data collected for plotting")
+        return avg_speeds, subject, intensity, muscle, window_size, step_size
     
     # Calculate means and standard errors for each window size
-    means = [np.mean(speed_list) for speed_list in speeds]
-    sems = [np.std(speed_list) / np.sqrt(len(speed_list)) for speed_list in speeds]
+    means = []
+    sems = []
+    for speed_list in speeds:
+        if len(speed_list) > 0:
+            means.append(np.mean(speed_list))
+            sems.append(np.std(speed_list) / np.sqrt(len(speed_list)))
     
-    # Create barplot
-    sns.barplot(x=window_sizes, y=means, yerr=sems, capsize=5)
+    # Create barplot with seaborn
+    palette = sns.color_palette("husl", n_colors=len(means))
+    ax = sns.barplot(x=window_sizes, y=means, palette=palette, capsize=5, alpha=0.7)
     
-    # Customize plot
-    plt.title(f'Average Processing Time by Window Size\n(Subject: {subject}, Intensity: {intensity}%, Muscle: {muscle})')
+    # Add error bars manually since seaborn's yerr can be problematic
+    for i, (m, sem) in enumerate(zip(means, sems)):
+        ax.errorbar(i, m, yerr=sem, color='black', capsize=5, capthick=1, ls='none')
+    
+    # Customize plot with milliseconds label
+    plt.title(f'Average Prediction Time by Window Size\n(Subject: {subject}, Intensity: {intensity}%, Muscle: {muscle})')
     plt.xlabel('Window Size')
-    plt.ylabel('Processing Time (seconds)')
+    plt.ylabel('Prediction Time (ms)')
     
-    # Add grid for better readability
+    # Add only vertical grid lines
     plt.grid(True, axis='y', linestyle='--', alpha=0.7)
+    ax.grid(axis='x', alpha=0)  # Remove horizontal grid lines
     
     # Adjust layout and display
     plt.tight_layout()
@@ -363,32 +401,8 @@ def main():
 if __name__ == "__main__":
     result = dict()
     # Create a figure with 2x2 subplots
-    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
-    
-    # Process each set of measurements
-    for i in range(4):
-        avg_speeds, subject, intensity, muscle, window_size, step_size = main()
-        key = f"{subject}_{intensity}_{muscle}_{window_size}_{step_size}"
-        result[key] = avg_speeds
-        
-        # Convert dictionary to lists for plotting
-        window_sizes = list(avg_speeds.keys())
-        speeds = list(avg_speeds.values())
-        means = [np.mean(speed_list) for speed_list in speeds]
-        sems = [np.std(speed_list) / np.sqrt(len(speed_list)) for speed_list in speeds]
-        
-        # Plot in the appropriate subplot
-        ax = [ax1, ax2, ax3, ax4][i]
-        sns.barplot(x=window_sizes, y=means, yerr=sems, capsize=5, ax=ax)
-        
-        # Customize each subplot
-        ax.set_title(f'WS_{window_size}-ST_{step_size}')
-        ax.set_xlabel('Window Size')
-        ax.set_ylabel('Processing Time (seconds)')
-        ax.grid(True, axis='y', linestyle='--', alpha=0.7)
-    
-    # Adjust layout and display
-    plt.suptitle(f'Prediction time of Subject: {subject}, Intensity: {intensity}%, Muscle: {muscle}', fontsize=16, y=1.02)
-    plt.tight_layout()
-    plt.show()
+    avg_speeds, subject, intensity, muscle, window_size, step_size = main()
+    result["meta_data"] = {"subject": subject, "intensity": intensity, "muscle": muscle, "window_size": window_size, "step_size": step_size}
+    result["prediction_speeds"] = avg_speeds
+    joblib.dump(result, "result.pkl")
     
