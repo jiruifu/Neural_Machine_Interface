@@ -5,7 +5,7 @@ from tkinter import filedialog
 import os
 import torch
 import pickle
-from models import NeuralInterface_1D, NeuralInterface_3D
+from dependancy import NeuralInterface_1D, NeuralInterface_3D
 import tkinter as tk
 from tkinter.filedialog import askopenfilename
 from tkinter import filedialog
@@ -333,36 +333,40 @@ def process_time(root_dir, frames=500):
             tHist.append((end_time - start_time) * 1000)
     shutil.rmtree(result["targetDir"])
     print("---%s milliseconds ---"% np.mean(tHist))
-    return np.mean(tHist), subject, intensity, muscle, window_size, step_size
+    return np.mean(tHist), tHist,subject, intensity, muscle, window_size, step_size
 
 def main():
     #1-Sort the folder of results for a specific subject and intensity
     avg_speeds = {
-        "WS20": [],
-        "WS40": [],
-        "WS80": [],
-        "WS120": []
+        "WS20": {"avg_speed": [], "tHist": []},
+        "WS40": {"avg_speed": [], "tHist": []},
+        "WS80": {"avg_speed": [], "tHist": []},
+        "WS120": {"avg_speed": [], "tHist": []}
     }
     root_path, selected_root = sort_folders_by_creation()
     for i, folder in enumerate(root_path):
         print(f"Processing {folder}")
-        avg_speed, subject, intensity, muscle, window_size, step_size = process_time(os.path.join(selected_root, folder))
+        avg_speed, tHist, subject, intensity, muscle, window_size, step_size = process_time(os.path.join(selected_root, folder))
         match int(window_size):
             case 20:
-                avg_speeds["WS20"].append(avg_speed)
+                avg_speeds["WS20"]["avg_speed"].append(avg_speed)
+                avg_speeds["WS20"]["tHist"].append(tHist)
             case 40:
-                avg_speeds["WS40"].append(avg_speed)
+                avg_speeds["WS40"]["avg_speed"].append(avg_speed)
+                avg_speeds["WS40"]["tHist"].append(tHist)
             case 80:
-                avg_speeds["WS80"].append(avg_speed)
+                avg_speeds["WS80"]["avg_speed"].append(avg_speed)
+                avg_speeds["WS80"]["tHist"].append(tHist)
             case 120:
-                avg_speeds["WS120"].append(avg_speed)
+                avg_speeds["WS120"]["avg_speed"].append(avg_speed)
+                avg_speeds["WS120"]["tHist"].append(tHist)
     
     # Create plot
     plt.figure(figsize=(5, 4))
 
     # Convert dictionary to lists for plotting
     window_sizes = list(avg_speeds.keys())
-    speeds = [s for s in avg_speeds.values() if len(s) > 0]  # Only include non-empty lists
+    speeds = [s["avg_speed"] for s in avg_speeds.values() if len(s["avg_speed"]) > 0]  # Only include non-empty lists
     
     if not speeds:  # If no data collected
         print("No data collected for plotting")
@@ -378,7 +382,8 @@ def main():
     
     # Create barplot with seaborn
     palette = sns.color_palette("husl", n_colors=len(means))
-    ax = sns.barplot(x=window_sizes, y=means, palette=palette, capsize=5, alpha=0.7)
+    ax = sns.barplot(x=window_sizes, y=means, hue=window_sizes, palette=palette, 
+                    legend=False, capsize=5, alpha=0.7)
     
     # Add error bars manually since seaborn's yerr can be problematic
     for i, (m, sem) in enumerate(zip(means, sems)):

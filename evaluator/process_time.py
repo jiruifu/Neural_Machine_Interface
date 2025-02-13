@@ -6,7 +6,7 @@ How to use?
 import os
 import torch
 import pickle
-from models import NeuralInterface_1D, NeuralInterface_3D
+from evaluator.dependancy.models import NeuralInterface_1D, NeuralInterface_3D
 import tkinter as tk
 from tkinter.filedialog import askopenfilename
 from tkinter import filedialog
