@@ -1,8 +1,7 @@
-"""
-The script to compute the real-time processing time of the CNN models.
-How to use?
-1. Import the correct model class from models.py
-"""
+import os
+from pathlib import Path
+import tkinter as tk
+from tkinter import filedialog
 import os
 import torch
 import pickle
@@ -16,6 +15,15 @@ import time
 import numpy as np
 import scipy.io as sio
 import joblib
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def sort_folders_by_creation():
+    root = tk.Tk()
+    root.withdraw()
+    root_path = filedialog.askdirectory(title="Select the root directory")
+    folders = [f for f in os.listdir(root_path) if os.path.isdir(os.path.join(root_path, f))]
+    return sorted(folders, key=lambda x: os.path.getctime(os.path.join(root_path, x))), root_path
 
 class hdEMG:
     def __init__(self, matfilePaths:list=None, mode="1D"):
@@ -201,20 +209,25 @@ def organize_files(resultDir=None, dataDir=None, targetDir=None):
     if resultDir is None:
         resultDir = ask_dir("Please select the result directory")
         resultDirName = os.path.split(resultDir)[-1]
-        print(f"Selected result directory: {resultDirName}")
+    else:
+        resultDirName = os.path.split(resultDir)[-1]
+    print(f"Selected result directory: {resultDirName}")
+    
     if dataDir is None:
         dataDir = ask_dir("Please select the directory of the .mat files")
         dataDirName = os.path.split(dataDir)[-1]
-        print(f"Selected data directory: {dataDirName}")
+    else:
+        dataDirName = os.path.split(dataDir)[-1]
+    print(f"Selected data directory: {dataDirName}")
+    
     if targetDir is None:
         targetDir = ask_dir("Please select the target directory")
         targetDirName = os.path.split(targetDir)[-1]
         print(f"Selected target directory: {targetDirName}")
     
     info = extract_info_from_dirname(resultDirName)
-    for key, value in info.items():
-        print(f"{key}: {value}")
-    
+    # for key, value in info.items():
+    #     print(f"{key}: {value}")
     # rebuilt filename for model and parameter files
     model_name = f"{info['subject']}_{info['intensity']}_{info['muscle']}_WS{info['window_size']}-ST{info['step_size']}-{info['dimension']}_model.pth"
     param_name = f"{info['subject']}_{info['intensity']}_{info['muscle']}_WS{info['window_size']}-ST{info['step_size']}-{info['dimension']}_param.pkl"
@@ -244,9 +257,9 @@ def organize_files(resultDir=None, dataDir=None, targetDir=None):
     output["params"] = {"name": param_name, "path": os.path.join(targetDir, param_name)}
     output["matfiles"] = matfiles
     output["targetDir"] = targetDir
-    return output, info["dimension"]
+    return output, info["dimension"], info["subject"], info["intensity"], info["muscle"], info["window_size"], info["step_size"]
 
-def process_time(frames=500):
+def process_time(root_dir, frames=500):
     """
     Compute the processing time of the model using n frames of the HD-EMG segments.
     Args:
@@ -259,7 +272,7 @@ def process_time(frames=500):
         tHist: the histogram of the processing time
     """
     # # 1-Copy the model, parameter and the mat file to the target directory
-    result, mode = organize_files()
+    result, mode, subject, intensity, muscle, window_size, step_size = organize_files(resultDir=root_dir)
     model_path = result["models"]["path"]
     model_name = result["models"]["name"]
     param_path = result["params"]["path"]
@@ -296,12 +309,86 @@ def process_time(frames=500):
             tHist.append(end_time - start_time)
     shutil.rmtree(result["targetDir"])
     print("---%s seconds ---"% np.mean(tHist))
-    return np.mean(tHist), tHist
+    return np.mean(tHist), subject, intensity, muscle, window_size, step_size
 
+def main():
+    #1-Sort the folder of results for a specific subject and intensity
+    avg_speeds = {
+        "WS20": [],
+        "WS40": [],
+        "WS80": [],
+        "WS120": []
+    }
+    root_path, selected_root = sort_folders_by_creation()
+    for i, folder in enumerate(root_path):
+        print(f"Processing {folder}")
+        avg_speed, subject, intensity, muscle, window_size, step_size = process_time(os.path.join(selected_root, folder))
+        match int(window_size):
+            case 20:
+                avg_speeds["WS20"].append(avg_speed)
+            case 40:
+                avg_speeds["WS40"].append(avg_speed)
+            case 80:
+                avg_speeds["WS80"].append(avg_speed)
+            case 120:
+                avg_speeds["WS120"].append(avg_speed)
+    
+    # Create plot
+    plt.figure(figsize=(10, 6))
+
+    # Convert dictionary to lists for plotting
+    window_sizes = list(avg_speeds.keys())
+    speeds = list(avg_speeds.values())
+    
+    # Calculate means and standard errors for each window size
+    means = [np.mean(speed_list) for speed_list in speeds]
+    sems = [np.std(speed_list) / np.sqrt(len(speed_list)) for speed_list in speeds]
+    
+    # Create barplot
+    sns.barplot(x=window_sizes, y=means, yerr=sems, capsize=5)
+    
+    # Customize plot
+    plt.title(f'Average Processing Time by Window Size\n(Subject: {subject}, Intensity: {intensity}%, Muscle: {muscle})')
+    plt.xlabel('Window Size')
+    plt.ylabel('Processing Time (seconds)')
+    
+    # Add grid for better readability
+    plt.grid(True, axis='y', linestyle='--', alpha=0.7)
+    
+    # Adjust layout and display
+    plt.tight_layout()
+    plt.show()
+    return avg_speeds, subject, intensity, muscle, window_size, step_size
 
 if __name__ == "__main__":
-    mean_time, tHist = process_time()
-    print(f"mean_time: {mean_time}")
-    print(f"Length of tHist: {len(tHist)}")
-
-
+    result = dict()
+    # Create a figure with 2x2 subplots
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
+    
+    # Process each set of measurements
+    for i in range(4):
+        avg_speeds, subject, intensity, muscle, window_size, step_size = main()
+        key = f"{subject}_{intensity}_{muscle}_{window_size}_{step_size}"
+        result[key] = avg_speeds
+        
+        # Convert dictionary to lists for plotting
+        window_sizes = list(avg_speeds.keys())
+        speeds = list(avg_speeds.values())
+        means = [np.mean(speed_list) for speed_list in speeds]
+        sems = [np.std(speed_list) / np.sqrt(len(speed_list)) for speed_list in speeds]
+        
+        # Plot in the appropriate subplot
+        ax = [ax1, ax2, ax3, ax4][i]
+        sns.barplot(x=window_sizes, y=means, yerr=sems, capsize=5, ax=ax)
+        
+        # Customize each subplot
+        ax.set_title(f'WS_{window_size}-ST_{step_size}')
+        ax.set_xlabel('Window Size')
+        ax.set_ylabel('Processing Time (seconds)')
+        ax.grid(True, axis='y', linestyle='--', alpha=0.7)
+    
+    # Adjust layout and display
+    plt.suptitle(f'Prediction time of Subject: {subject}, Intensity: {intensity}%, Muscle: {muscle}', fontsize=16, y=1.02)
+    plt.tight_layout()
+    plt.show()
+    
