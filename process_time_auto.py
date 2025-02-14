@@ -282,7 +282,7 @@ def organize_files(resultDir=None, dataDir=None):
     output["targetDir"] = targetDir
     return output, info["dimension"], info["subject"], info["intensity"], info["muscle"], info["window_size"], info["step_size"]
 
-def process_time(root_dir, frames=500):
+def process_time(root_dir, frames=500, index=0):
     """
     Compute the processing time of the model using n frames of the HD-EMG segments.
     Args:
@@ -324,7 +324,7 @@ def process_time(root_dir, frames=500):
     hdemg.reset_frame()
     with torch.no_grad():
         for i in range(frames):
-            frame = hdemg.get_frame()
+            frame = hdemg.get_frame(index=index)
             frame.to(device)
             start_time = time.time()
             _ = model(frame)
@@ -346,7 +346,7 @@ def main():
     root_path, selected_root = sort_folders_by_creation()
     for i, folder in enumerate(root_path):
         print(f"Processing {folder}")
-        avg_speed, tHist, subject, intensity, muscle, window_size, step_size = process_time(os.path.join(selected_root, folder))
+        avg_speed, tHist, subject, intensity, muscle, window_size, step_size = process_time(os.path.join(selected_root, folder), frames=250, index=500)
         match int(window_size):
             case 20:
                 avg_speeds["WS20"]["avg_speed"].append(avg_speed)
@@ -362,7 +362,7 @@ def main():
                 avg_speeds["WS120"]["tHist"].append(tHist)
     
     # Create plot
-    plt.figure(figsize=(5, 4))
+    plt.figure(figsize=(3, 2))
 
     # Convert dictionary to lists for plotting
     window_sizes = list(avg_speeds.keys())
@@ -383,11 +383,11 @@ def main():
     # Create barplot with seaborn
     palette = sns.color_palette("husl", n_colors=len(means))
     ax = sns.barplot(x=window_sizes, y=means, hue=window_sizes, palette=palette, 
-                    legend=False, capsize=5, alpha=0.7)
+                    legend=False, capsize=3, alpha=0.7)
     
     # Add error bars manually since seaborn's yerr can be problematic
     for i, (m, sem) in enumerate(zip(means, sems)):
-        ax.errorbar(i, m, yerr=sem, color='black', capsize=5, capthick=1, ls='none')
+        ax.errorbar(i, m, yerr=sem, color='black', capsize=5, capthick=3, ls='none')
     
     # Customize plot with milliseconds label
     plt.title(f'Average Prediction Time by Window Size\n(Subject: {subject}, Intensity: {intensity}%, Muscle: {muscle})')

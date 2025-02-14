@@ -175,3 +175,6 @@ tester.py
 /1_Cluster_Results_v2/uc10_10MVC_GM_3D
 /1_Cluster_Results_v2
 result.pkl
+/tmp
+*.pkl
+*.png
